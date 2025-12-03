@@ -9,6 +9,7 @@ Simple agent loop and API client scaffold.
 
 import os, json, textwrap, re, time
 import requests
+from typing import Tuple
 
 API_KEY  = os.getenv("OPENAI_API_KEY", "cse476")
 API_BASE = os.getenv("API_BASE", "http://10.4.58.53:41701/v1")  
@@ -56,3 +57,15 @@ def call_model_chat_completions(prompt: str,
             return {"ok": False, "text": None, "raw": None, "status": status, "error": str(err_text), "headers": hdrs}
     except requests.RequestException as e:
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
+
+def direct(question: str) -> Tuple[bool, str]:
+    """
+    Strategy 1: Directly ask the model the question.
+    """
+    systemPrompt = "You are a helpful assistant, reply with only the final answer and give no explanations."
+    systemResponse = call_model_chat_completions(question, system=systemPrompt, temperature=0)
+    
+    if systemResponse.get('ok'):
+        return True, systemResponse.get('text', '').strip()
+    else:
+        return False, systemResponse.get('error')
