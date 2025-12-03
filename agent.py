@@ -69,3 +69,19 @@ def direct(question: str) -> Tuple[bool, str]:
         return True, systemResponse.get('text', '').strip()
     else:
         return False, systemResponse.get('error')
+    
+def chain_of_thought(question: str) -> Tuple[bool, str]:
+    """
+    Strategy 2: Chain-of-Thought prompting.
+    """
+    cotPrompt = textwrap.dedent(f"""\
+    You are a helpful assistant. Think through the problem step-by-step before providing the final answer.
+    Question: {question}
+    Let's think step by step.""")
+    
+    systemResponse = call_model_chat_completions(cotPrompt, temperature=0.0)
+    
+    if systemResponse.get('ok'):
+        return True, systemResponse.get('text', '').strip()
+    else:
+        return False, systemResponse.get('error')
