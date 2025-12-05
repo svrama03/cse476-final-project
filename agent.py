@@ -1,7 +1,3 @@
-# %% Minimal setup
-# If needed (uncomment in a notebook):
-# !pip install requests python-dotenv
-
 import os, json, textwrap, re, time
 import requests
 from typing import Tuple, Optional
@@ -54,38 +50,38 @@ def call_model_chat_completions(prompt: str,
     except requests.RequestException as e:
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
-def direct(question: str) -> Optional[str]:
+def direct(question: str) -> Tuple[bool, str]:
     system_prompt = "You are a helpful assistant, reply with only the final answer and give no explanations."
     try:
         resp = call_model_chat_completions(question, system=system_prompt, temperature=0)
-        return resp.strip()
+        return True, resp.get('text', '').strip()
     except Exception as e:
-        print(f"Error calling model: {e}")
-        return None
+        resp_err = f"Error calling model: {e}"
+        return False, resp_err
     
-def chain_of_thought(question: str) -> Optional[str]:
+def chain_of_thought(question: str) -> Tuple[bool, str]:
     cot_prompt = f"""You are a helpful assistant. Think through the problem step-by-step before providing the final answer.
     Question: {question}
     Let's approach this systematically."""
 
     try:
         resp = call_model_chat_completions(cot_prompt, max_tokens=512, temperature=0.0)
-        return resp.strip()
+        return True, resp.get('text', '').strip()
     except Exception as e:
-        print(f"Error calling model: {e}")
-        return None
+        resp_err = f"Error calling model: {e}"
+        return False, resp_err
     
-def self_refine(question: str, initial_answer: str) -> Optional[str]:
+def self_refine(question: str, initial_answer: str) -> Tuple[bool, str]:
     self_refine_prompt = f"""Question: {question}
     Initial Answer: {initial_answer}
-    Review the answer above. If it's correct, return it as-is. If there are errors, provide a corrected version."""
+    Review the answer above. If it's correct, return it as-is. If there are errors, provide a corrected version. Return ONLY the corrected final answer without any explanations."""
     
     try:
         resp = call_model_chat_completions(self_refine_prompt, max_tokens=2048, temperature=0)
-        return resp.strip()
+        return True, resp.get('text', '').strip()
     except Exception as e:
-        print(f"Error calling model: {e}")
-        return None
+        resp_err = f"Error calling model: {e}"
+        return False, resp_err
     
 def reasoning_strategy(question: str) -> Tuple[bool, str]:
     """
@@ -95,39 +91,41 @@ def reasoning_strategy(question: str) -> Tuple[bool, str]:
     if not ok_cot:
         return direct(question)
 
-    ok_refine, refined = self_refine(question, cot_answer)
-    if ok_refine:
-        return True, refined
-    else:
+    try:
+        ok_refine, refined_answer = self_refine(question, cot_answer)
+        if ok_refine:
+            return True, refined_answer
+    except Exception as e:
         return True, cot_answer
     
 def coding(question: str) -> Tuple[bool, str]:
     """
     Coding tasks strategy
     """
-    systemPrompt = "You are a Python coding assistant. Return ONLY valid Python code that solves the task, no explanations, no comments outside the code block."
-    systemResponse = call_model_chat_completions(question, system=systemPrompt, max_tokens=2048, temperature=0.0)
-    if systemResponse.get('ok'):
-        return True, systemResponse.get('text', '').strip()
-    else:
-        return False, systemResponse.get('error')
+    system_prompt = "You are a Python coding assistant. Return ONLY valid Python code that solves the task, no explanations, no comments outside the code block."
+    try:
+        resp = call_model_chat_completions(question, system=system_prompt, max_tokens=2048, temperature=0.0)
+        return resp.get('ok'), resp.get('text', '').strip()
+    except Exception as e:
+        resp_err = f"Error calling model: {e}"
+        return False, resp_err
     
 def prediction(question: str) -> Tuple[bool, str]:
     """
     Strategy for future prediction tasks that must end with \boxed{...}.
     """
-    systemPrompt = (
+    system_prompt = (
         "You are an assistant that predicts future events. "
         "You MUST make a single clear prediction and ensure the final line ends with "
         "exactly one LaTeX-style box: \\boxed{YOUR_PREDICTION}."
     )
 
-    systemResponse = reasoning_strategy(question)
-
-    if systemResponse.get('ok'):
-        return True, systemResponse.get('text', '').strip()
-    else:
-        return False, systemResponse.get('error')
+    try:
+        resp = call_model_chat_completions(question, system=system_prompt, max_tokens=2048, temperature=0.0)
+        return resp.get('ok'), resp.get('text', '').strip()
+    except Exception as e:
+        resp_err = f"Error calling model: {e}"
+        return False, resp_err
 
 def guess_question_type(question: str) -> str:
     """
@@ -158,9 +156,17 @@ def run_agent(question: str) -> Tuple[bool, str]:
     }
 
     strategy = strategy_map.get(question_type, strategy_map["default"])
-    ok, answer = strategy(question)
+    ok, ans = strategy(question)
 
     if not ok:
-        ok, answer = direct(question)
+        ok, ans = direct(question)
 
-    return ok, answer
+    return ok, ans
+
+
+test_question = "Write a Python function that returns the Fibonacci sequence up to n."
+ok, answer = run_agent(test_question)
+if ok:
+    print("Answer:\n", answer)
+else:
+    print("Error:\n", answer)
