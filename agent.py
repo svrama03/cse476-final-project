@@ -49,6 +49,17 @@ def call_model_chat_completions(prompt: str,
     except requests.RequestException as e:
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
+# Helper functions
+def _error_response(e: Exception) -> dict:
+    return {
+        "ok": False,
+        "text": None,
+        "raw": None,
+        "status": -1,
+        "error": f"Error calling model: {e}",
+        "headers": {},
+    }
+
 def direct(question: str) -> dict:
     """
     Directly answer the question without additional reasoning steps.
@@ -59,15 +70,7 @@ def direct(question: str) -> dict:
         resp["text"] = extract_final_answer(resp.get("text" or "").strip())
         return resp
     except Exception as e:
-        resp_err = f"Error calling model: {e}"
-        return {
-            "ok": False,
-            "text": None,
-            "raw": None,
-            "status": -1,
-            "error": resp_err,
-            "headers": {}
-        }
+        return _error_response(e)
     
 def chain_of_thought(question: str) -> dict:
     """
@@ -84,15 +87,7 @@ def chain_of_thought(question: str) -> dict:
         resp["text"] = extract_final_answer(resp.get("text" or "").strip())
         return resp
     except Exception as e:
-        resp_err = f"Error calling model: {e}"
-        return {
-            "ok": False,
-            "text": None,
-            "raw": None,
-            "status": -1,
-            "error": resp_err,
-            "headers": {}
-        }
+        return _error_response(e)
     
 def self_refine(question: str, initial_answer: str) -> dict:
     """
@@ -110,15 +105,7 @@ def self_refine(question: str, initial_answer: str) -> dict:
         resp["text"] = extract_final_answer(resp.get("text" or "").strip())
         return resp
     except Exception as e:
-        resp_err = f"Error calling model: {e}"
-        return {
-            "ok": False,
-            "text": None,
-            "raw": None,
-            "status": -1,
-            "error": resp_err,
-            "headers": {}
-        }
+        return _error_response(e)
     
 def reasoning_strategy(question: str) -> dict:
     """
@@ -128,12 +115,11 @@ def reasoning_strategy(question: str) -> dict:
     if not cot_resp.get("ok", False):
         return direct(question)
 
-    try:
-        refine_resp = self_refine(question, cot_resp.get("text", ""))
-        if refine_resp.get("ok", False):
-            return refine_resp
-    except Exception:
-        return cot_resp
+    refine_resp = self_refine(question, cot_resp.get("text", ""))
+    if refine_resp.get("ok", False):
+        return refine_resp
+    
+    return cot_resp
     
 def coding(question: str) -> dict:
     system_prompt = "You are a Python coding assistant. Return ONLY valid Python code that solves the task, no " \
@@ -143,15 +129,7 @@ def coding(question: str) -> dict:
         resp["text"] = resp.get("text" or "").strip()
         return resp
     except Exception as e:
-        resp_err = f"Error calling model: {e}"
-        return {
-            "ok": False,
-            "text": None,
-            "raw": None,
-            "status": -1,
-            "error": resp_err,
-            "headers": {}
-        }
+        return _error_response(e)
     
 def prediction(question: str) -> dict:
     """
@@ -165,15 +143,7 @@ def prediction(question: str) -> dict:
         resp["text"] = resp.get("text" or "").strip()
         return resp
     except Exception as e:
-        resp_err = f"Error calling model: {e}"
-        return {
-            "ok": False,
-            "text": None,
-            "raw": None,
-            "status": -1,
-            "error": resp_err,
-            "headers": {}
-        }
+        return _error_response(e)
 
 def extract_final_answer(text: str) -> str:
     """
@@ -187,6 +157,33 @@ def extract_final_answer(text: str) -> str:
         return match.group(1).strip()
     return text.strip()
 
+# Keyword lists for question type guessing
+PREDICTION_KEYWORDS = (
+    "predict", "forecast", "will happen", "future", "in the year", "by 20", "by 202",
+    "next decade", "next year", "next month", "next week", "next century",
+    "in 5 years", "in 10 years", "in 50 years", "in 100 years",
+    "trends", "emerging", "developments", "advancements", "evolution",
+    "projections", "anticipated", "expected", "likely to", "could be", "might be",
+)
+
+CODING_KEYWORDS = (
+    "code", "function", "class", "script", "program", "bug", "traceback",
+    "syntaxerror", "runtimeerror", "compile error", "compilation error",
+    "stack trace",
+)
+
+CODING_LANGUAGES = (
+    "python", "java", "javascript", "c++", "c#", "rust", "go",
+    "typescript", "ruby", "php", "swift", "kotlin", "html", "css", "sql",
+)
+
+MATH_KEYWORDS = (
+    "calculate", "compute", "evaluate", "what is", "find the value of",
+    "determine", "solve", "integrate", "differentiate", "sum of",
+    "product of", "plus", "minus", "times", "divided by",
+    "equation", "formula", "algebra", "geometry", "trigonometry", "calculus",
+)
+
 def guess_question_type(question: str) -> str:
     """
     Heuristically guess the question type based on keywords.
@@ -194,20 +191,13 @@ def guess_question_type(question: str) -> str:
     """
     q = question.lower()
 
-    prediction_keywords = ["predict", "forecast", "will happen", "future", "in the year", "by 20", "by 202", "next decade", "next year", "next month", "next week", 
-    "next century", "in 5 years", "in 10 years", "in 50 years", "in 100 years", "trends", "emerging", "developments", "advancements", "evolution", "projections", 
-    "anticipated", "expected", "likely to", "could be", "might be"]
-    if any(kw in q for kw in prediction_keywords):
+    if any(kw in q for kw in PREDICTION_KEYWORDS):
         return "future_prediction"
 
-    coding_keywords = ["code", "function", "class", "script", "program", "bug", "traceback", "syntaxerror", "runtimeerror", "compile error", "compilation error", "stack trace"    ]
-    languages = ["python", "java", "javascript", "c++", "c#", "rust", "go", "typescript", "ruby", "php", "swift", "kotlin", "html", "css", "sql"]
-    if "```" in q or any(kw in q for kw in coding_keywords) or any(lang in q for lang in languages):
+    if "```" in q or any(kw in q for kw in CODING_KEYWORDS) or any(lang in q for lang in CODING_LANGUAGES):
         return "coding"
 
-    math_words = ["calculate", "compute", "evaluate", "what is", "find the value of", "determine", "solve", "integrate", "differentiate", 
-    "sum of", "product of", "plus", "minus", "times", "divided by", "equation", "formula", "algebra", "geometry", "trigonometry", "calculus"]
-    if any(kw in q for kw in math_words):
+    if any(kw in q for kw in MATH_KEYWORDS):
         return "math"
     
     return "default"
