@@ -1,6 +1,5 @@
 import os, json, textwrap, re, time
 import requests
-from typing import Tuple, Optional
 
 API_KEY  = os.getenv("OPENAI_API_KEY", "cse476")
 API_BASE = os.getenv("API_BASE", "http://10.4.58.53:41701/v1")  
@@ -50,100 +49,172 @@ def call_model_chat_completions(prompt: str,
     except requests.RequestException as e:
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
-def direct(question: str) -> Tuple[bool, str]:
+def direct(question: str) -> dict:
+    """
+    Directly answer the question without additional reasoning steps.
+    """
     system_prompt = "You are a helpful assistant, reply with only the final answer and give no explanations."
     try:
         resp = call_model_chat_completions(question, system=system_prompt, temperature=0)
-        return True, resp.get('text', '').strip()
+        resp["text"] = extract_final_answer(resp.get("text" or "").strip())
+        return resp
     except Exception as e:
         resp_err = f"Error calling model: {e}"
-        return False, resp_err
+        return {
+            "ok": False,
+            "text": None,
+            "raw": None,
+            "status": -1,
+            "error": resp_err,
+            "headers": {}
+        }
     
-def chain_of_thought(question: str) -> Tuple[bool, str]:
-    cot_prompt = f"""You are a helpful assistant. Think through the problem step-by-step before providing the final answer.
+def chain_of_thought(question: str) -> dict:
+    """
+    Use chain-of-thought prompting to reason through the question step-by-step.
+    """
+    cot_prompt = f"""
+    You are a careful reasoning assistant.
     Question: {question}
-    Let's approach this systematically."""
+    First, think through the problem step-by-step. Then, on a new line, write:
+    Final answer: <your short final answer here>""".strip()
 
     try:
         resp = call_model_chat_completions(cot_prompt, max_tokens=512, temperature=0.0)
-        return True, resp.get('text', '').strip()
+        resp["text"] = extract_final_answer(resp.get("text" or "").strip())
+        return resp
     except Exception as e:
         resp_err = f"Error calling model: {e}"
-        return False, resp_err
+        return {
+            "ok": False,
+            "text": None,
+            "raw": None,
+            "status": -1,
+            "error": resp_err,
+            "headers": {}
+        }
     
-def self_refine(question: str, initial_answer: str) -> Tuple[bool, str]:
-    self_refine_prompt = f"""Question: {question}
+def self_refine(question: str, initial_answer: str) -> dict:
+    """
+    Use self-refinement to check and improve the initial answer.
+    """
+    self_refine_prompt = f"""You are a careful, self-checking assistant.
+    Question: {question}
     Initial Answer: {initial_answer}
-    Review the answer above. If it's correct, return it as-is. If there are errors, provide a corrected version. Return ONLY the corrected final answer without any explanations."""
-    
+    1. Check whether the initial answer is logically and mathematically correct.
+    2. If it is correct, keep it.
+    3. If it is not correct, fix it.
+    Write any reasoning you need, then on a new line write: Final answer: <your corrected short final answer>""".strip()
     try:
         resp = call_model_chat_completions(self_refine_prompt, max_tokens=2048, temperature=0)
-        return True, resp.get('text', '').strip()
+        resp["text"] = extract_final_answer(resp.get("text" or "").strip())
+        return resp
     except Exception as e:
         resp_err = f"Error calling model: {e}"
-        return False, resp_err
+        return {
+            "ok": False,
+            "text": None,
+            "raw": None,
+            "status": -1,
+            "error": resp_err,
+            "headers": {}
+        }
     
-def reasoning_strategy(question: str) -> Tuple[bool, str]:
+def reasoning_strategy(question: str) -> dict:
     """
-    Chain of thought followed by self-refinement, utilized in math/planning
+    Default reasoning strategy: chain-of-thought followed by self-refinement.
     """
-    ok_cot, cot_answer = chain_of_thought(question)
-    if not ok_cot:
+    cot_resp = chain_of_thought(question)
+    if not cot_resp.get("ok", False):
         return direct(question)
 
     try:
-        ok_refine, refined_answer = self_refine(question, cot_answer)
-        if ok_refine:
-            return True, refined_answer
-    except Exception as e:
-        return True, cot_answer
+        refine_resp = self_refine(question, cot_resp.get("text", ""))
+        if refine_resp.get("ok", False):
+            return refine_resp
+    except Exception:
+        return cot_resp
     
-def coding(question: str) -> Tuple[bool, str]:
-    """
-    Coding tasks strategy
-    """
-    system_prompt = "You are a Python coding assistant. Return ONLY valid Python code that solves the task, no explanations, no comments outside the code block."
+def coding(question: str) -> dict:
+    system_prompt = "You are a Python coding assistant. Return ONLY valid Python code that solves the task, no " \
+    "explanations, no comments outside the code blocks."
     try:
         resp = call_model_chat_completions(question, system=system_prompt, max_tokens=2048, temperature=0.0)
-        return resp.get('ok'), resp.get('text', '').strip()
+        resp["text"] = resp.get("text" or "").strip()
+        return resp
     except Exception as e:
         resp_err = f"Error calling model: {e}"
-        return False, resp_err
+        return {
+            "ok": False,
+            "text": None,
+            "raw": None,
+            "status": -1,
+            "error": resp_err,
+            "headers": {}
+        }
     
-def prediction(question: str) -> Tuple[bool, str]:
+def prediction(question: str) -> dict:
     """
-    Strategy for future prediction tasks that must end with \boxed{...}.
+    Predict future events based on the question.
     """
-    system_prompt = (
-        "You are an assistant that predicts future events. "
-        "You MUST make a single clear prediction and ensure the final line ends with "
-        "exactly one LaTeX-style box: \\boxed{YOUR_PREDICTION}."
-    )
+    system_prompt = "You are an assistant that predicts future events. You MUST make a single clear prediction and " \
+    "ensure the final line ends with exactly one LaTeX-style box: [{YOUR_PREDICTION}]."
 
     try:
         resp = call_model_chat_completions(question, system=system_prompt, max_tokens=2048, temperature=0.0)
-        return resp.get('ok'), resp.get('text', '').strip()
+        resp["text"] = resp.get("text" or "").strip()
+        return resp
     except Exception as e:
         resp_err = f"Error calling model: {e}"
-        return False, resp_err
+        return {
+            "ok": False,
+            "text": None,
+            "raw": None,
+            "status": -1,
+            "error": resp_err,
+            "headers": {}
+        }
+
+def extract_final_answer(text: str) -> str:
+    """
+    Extracts the final answer from the model's response text.
+    Looks for the pattern "Final answer: <answer>" and returns <answer>.
+    """
+    if not text:
+        return ""
+    match = re.search(r"Final answer:\s*(.*)", text, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return text.strip()
 
 def guess_question_type(question: str) -> str:
     """
-    Guesses/Classifies the question type
+    Heuristically guess the question type based on keywords.
+    Returns one of: "coding", "future_prediction", "math", "default"
     """
     q = question.lower()
 
-    if "predict" in q and "\\boxed" in q:
+    prediction_keywords = ["predict", "forecast", "will happen", "future", "in the year", "by 20", "by 202", "next decade", "next year", "next month", "next week", 
+    "next century", "in 5 years", "in 10 years", "in 50 years", "in 100 years", "trends", "emerging", "developments", "advancements", "evolution", "projections", 
+    "anticipated", "expected", "likely to", "could be", "might be"]
+    if any(kw in q for kw in prediction_keywords):
         return "future_prediction"
-    if "[plan]" in q and "my plan is as follows" in q:
-        return "planning"
-    if "```" in q or "def task_func" in q or "from datetime import" in q:
-        return "coding"
-    return "math"
 
-def run_agent(question: str) -> Tuple[bool, str]:
+    coding_keywords = ["code", "function", "class", "script", "program", "bug", "traceback", "syntaxerror", "runtimeerror", "compile error", "compilation error", "stack trace"    ]
+    languages = ["python", "java", "javascript", "c++", "c#", "rust", "go", "typescript", "ruby", "php", "swift", "kotlin", "html", "css", "sql"]
+    if "```" in q or any(kw in q for kw in coding_keywords) or any(lang in q for lang in languages):
+        return "coding"
+
+    math_words = ["calculate", "compute", "evaluate", "what is", "find the value of", "determine", "solve", "integrate", "differentiate", 
+    "sum of", "product of", "plus", "minus", "times", "divided by", "equation", "formula", "algebra", "geometry", "trigonometry", "calculus"]
+    if any(kw in q for kw in math_words):
+        return "math"
+    
+    return "default"
+
+def run_agent(question: str) -> dict:
     """
-    Agent Loop
+    Agent loop: decide strategy based on question type and execute it.
     """
     question_type = guess_question_type(question)
 
@@ -151,22 +222,13 @@ def run_agent(question: str) -> Tuple[bool, str]:
         "coding": coding,
         "future_prediction": prediction,
         "math": reasoning_strategy,
-        "planning": reasoning_strategy,
         "default": direct
     }
 
     strategy = strategy_map.get(question_type, strategy_map["default"])
-    ok, ans = strategy(question)
+    resp = strategy(question)
 
-    if not ok:
-        ok, ans = direct(question)
+    if not resp.get("ok", False):
+        resp = direct(question)
 
-    return ok, ans
-
-
-test_question = "Write a Python function that returns the Fibonacci sequence up to n."
-ok, answer = run_agent(test_question)
-if ok:
-    print("Answer:\n", answer)
-else:
-    print("Error:\n", answer)
+    return resp
