@@ -1,4 +1,4 @@
-import os, json, textwrap, re, time
+import os, re
 import requests
 
 API_KEY  = os.getenv("OPENAI_API_KEY", "cse476")
@@ -61,9 +61,6 @@ def _error_response(e: Exception) -> dict:
     }
 
 def direct(question: str) -> dict:
-    """
-    Directly answer the question without additional reasoning steps.
-    """
     system_prompt = "You are a helpful assistant, reply with only the final answer and give no explanations."
     try:
         resp = call_model_chat_completions(question, system=system_prompt, temperature=0)
@@ -73,9 +70,6 @@ def direct(question: str) -> dict:
         return _error_response(e)
     
 def chain_of_thought(question: str) -> dict:
-    """
-    Use chain-of-thought prompting to reason through the question step-by-step.
-    """
     cot_prompt = f"""
     You are a careful reasoning assistant.
     Question: {question}
@@ -90,9 +84,6 @@ def chain_of_thought(question: str) -> dict:
         return _error_response(e)
     
 def self_refine(question: str, initial_answer: str) -> dict:
-    """
-    Use self-refinement to check and improve the initial answer.
-    """
     self_refine_prompt = f"""You are a careful, self-checking assistant.
     Question: {question}
     Initial Answer: {initial_answer}
@@ -108,9 +99,6 @@ def self_refine(question: str, initial_answer: str) -> dict:
         return _error_response(e)
     
 def reasoning_strategy(question: str) -> dict:
-    """
-    Default reasoning strategy: chain-of-thought followed by self-refinement.
-    """
     cot_resp = chain_of_thought(question)
     if not cot_resp.get("ok", False):
         return direct(question)
@@ -136,9 +124,6 @@ def coding(question: str) -> dict:
         return _error_response(e)
     
 def prediction(question: str) -> dict:
-    """
-    Predict future events based on the question.
-    """
     system_prompt = "You are an assistant that predicts future events. You MUST make a single clear prediction and " \
     "ensure the final line ends with exactly one LaTeX-style box: [{YOUR_PREDICTION}]."
 
@@ -150,10 +135,6 @@ def prediction(question: str) -> dict:
         return _error_response(e)
 
 def extract_final_answer(text: str) -> str:
-    """
-    Extracts the final answer from the model's response text.
-    Looks for the pattern "Final answer: <answer>" and returns <answer>.
-    """
     if not text:
         return ""
     match = re.search(r"Final answer:\s*(.*)", text, re.IGNORECASE | re.DOTALL)
@@ -189,10 +170,6 @@ MATH_KEYWORDS = (
 )
 
 def guess_question_type(question: str) -> str:
-    """
-    Heuristically guess the question type based on keywords.
-    Returns one of: "coding", "future_prediction", "math", "default"
-    """
     q = question.lower()
 
     if any(kw in q for kw in PREDICTION_KEYWORDS):
@@ -207,9 +184,6 @@ def guess_question_type(question: str) -> str:
     return "default"
 
 def run_agent(question: str) -> str:
-    """
-    Agent loop: decide strategy based on question type and execute it.
-    """
     question_type = guess_question_type(question)
 
     strategy_map = {
