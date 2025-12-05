@@ -53,7 +53,7 @@ def call_model_chat_completions(prompt: str,
 def _error_response(e: Exception) -> dict:
     return {
         "ok": False,
-        "text": None,
+        "text": "",
         "raw": None,
         "status": -1,
         "error": f"Error calling model: {e}",
@@ -115,11 +115,15 @@ def reasoning_strategy(question: str) -> dict:
     if not cot_resp.get("ok", False):
         return direct(question)
 
-    refine_resp = self_refine(question, cot_resp.get("text", ""))
+    try:
+        refine_resp = self_refine(question, cot_resp.get("text", ""))
+    except Exception:
+        return cot_resp
+            
     if refine_resp.get("ok", False):
         return refine_resp
-    
-    return cot_resp
+    else: 
+        return cot_resp
     
 def coding(question: str) -> dict:
     system_prompt = "You are a Python coding assistant. Return ONLY valid Python code that solves the task, no " \
@@ -221,4 +225,4 @@ def run_agent(question: str) -> str:
     if not resp.get("ok", False):
         resp = direct(question)
 
-    return resp.get("text", "").strip()
+    return resp.get("text", "")
