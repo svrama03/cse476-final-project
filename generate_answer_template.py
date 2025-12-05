@@ -14,18 +14,20 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict, List
+from agent import run_agent
 
 
 INPUT_PATH = Path("cse_476_final_project_test_data.json")
-OUTPUT_PATH = Path("cse_476_final_project_answers.json")
+OUTPUT_PATH = Path("cse_476_final_project_test_answers.json")
 
 
 def load_questions(path: Path) -> List[Dict[str, Any]]:
-    with path.open("r") as fp:
+    with path.open("r", encoding="utf-8") as fp:
         data = json.load(fp)
     if not isinstance(data, list):
         raise ValueError("Input file must contain a list of question objects.")
     return data
+
 
 
 def build_answers(questions: List[Dict[str, Any]]) -> List[Dict[str, str]]:
@@ -34,8 +36,8 @@ def build_answers(questions: List[Dict[str, Any]]) -> List[Dict[str, str]]:
         # Example: assume you have an agent loop that produces an answer string.
         # real_answer = agent_loop(question["input"])
         # answers.append({"output": real_answer})
-        placeholder_answer = f"Placeholder answer for question {idx}"
-        answers.append({"output": placeholder_answer})
+        real_answer = run_agent(question["input"])
+        answers.append({"output": real_answer})
     return answers
 
 
@@ -64,11 +66,12 @@ def main() -> None:
     questions = load_questions(INPUT_PATH)
     answers = build_answers(questions)
 
-    with OUTPUT_PATH.open("w") as fp:
+    with OUTPUT_PATH.open("w", encoding="utf-8") as fp:
         json.dump(answers, fp, ensure_ascii=False, indent=2)
 
-    with OUTPUT_PATH.open("r") as fp:
+    with OUTPUT_PATH.open("r", encoding="utf-8") as fp:
         saved_answers = json.load(fp)
+
     validate_results(questions, saved_answers)
     print(
         f"Wrote {len(answers)} answers to {OUTPUT_PATH} "

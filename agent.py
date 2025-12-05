@@ -83,7 +83,7 @@ def chain_of_thought(question: str) -> dict:
     Final answer: <your short final answer here>""".strip()
 
     try:
-        resp = call_model_chat_completions(cot_prompt, max_tokens=512, temperature=0.0)
+        resp = call_model_chat_completions(cot_prompt, max_tokens=256, temperature=0.0)
         resp["text"] = extract_final_answer(resp.get("text" or "").strip())
         return resp
     except Exception as e:
@@ -101,7 +101,7 @@ def self_refine(question: str, initial_answer: str) -> dict:
     3. If it is not correct, fix it.
     Write any reasoning you need, then on a new line write: Final answer: <your corrected short final answer>""".strip()
     try:
-        resp = call_model_chat_completions(self_refine_prompt, max_tokens=2048, temperature=0)
+        resp = call_model_chat_completions(self_refine_prompt, max_tokens=512, temperature=0)
         resp["text"] = extract_final_answer(resp.get("text" or "").strip())
         return resp
     except Exception as e:
@@ -125,7 +125,7 @@ def coding(question: str) -> dict:
     system_prompt = "You are a Python coding assistant. Return ONLY valid Python code that solves the task, no " \
     "explanations, no comments outside the code blocks."
     try:
-        resp = call_model_chat_completions(question, system=system_prompt, max_tokens=2048, temperature=0.0)
+        resp = call_model_chat_completions(question, system=system_prompt, max_tokens=512, temperature=0.0)
         resp["text"] = resp.get("text" or "").strip()
         return resp
     except Exception as e:
@@ -139,7 +139,7 @@ def prediction(question: str) -> dict:
     "ensure the final line ends with exactly one LaTeX-style box: [{YOUR_PREDICTION}]."
 
     try:
-        resp = call_model_chat_completions(question, system=system_prompt, max_tokens=2048, temperature=0.0)
+        resp = call_model_chat_completions(question, system=system_prompt, max_tokens=512, temperature=0.0)
         resp["text"] = resp.get("text" or "").strip()
         return resp
     except Exception as e:
@@ -202,7 +202,7 @@ def guess_question_type(question: str) -> str:
     
     return "default"
 
-def run_agent(question: str) -> dict:
+def run_agent(question: str) -> str:
     """
     Agent loop: decide strategy based on question type and execute it.
     """
@@ -221,4 +221,4 @@ def run_agent(question: str) -> dict:
     if not resp.get("ok", False):
         resp = direct(question)
 
-    return resp
+    return resp.get("text", "").strip()
